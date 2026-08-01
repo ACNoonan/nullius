@@ -1,0 +1,1 @@
+Report vulnerabilities privately to adamcnoonan@gmail.com. These gates execute as git hooks and PreToolUse commands, so a path-handling bug is a code-execution bug — please do not open a public issue first.

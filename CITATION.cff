@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+title: "nullius: gates that refuse an unbacked research claim"
+message: "If you use these gates or the read-depth register, please cite."
+type: software
+authors:
+  - family-names: Noonan
+    given-names: Adam
+repository-code: "https://github.com/ACNoonan/nullius"
+license: MIT
+keywords:
+  - research integrity
+  - AI-assisted research
+  - provenance
+  - reproducibility
+abstract: >-
+  Blocking checks that refuse an AI-assisted research claim until an artifact
+  on disk backs it. Five write-time gates plus build-time provenance and
+  prose-leak checks, with a read-depth register (full, targeted,
+  fetch-summary, snippet, unsearched) for declaring how deeply each source was
+  actually read.

@@ -1,0 +1,37 @@
+{
+  "_comment": "nullius for Claude Code. Merge the `hooks` block into your project .claude/settings.json (or ~/.claude/settings.json for all repos — the gates are inert outside repos holding .nullius.toml, so global install is safe). Replace $HOME/.nullius if you cloned elsewhere.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.nullius/gates/research_depth_gate.py",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python3 $HOME/.nullius/gates/prereg_commitment_gate.py",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python3 $HOME/.nullius/gates/vocab_gate.py",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python3 $HOME/.nullius/gates/citation_attribution_gate.py",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python3 $HOME/.nullius/gates/marginal_gate.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

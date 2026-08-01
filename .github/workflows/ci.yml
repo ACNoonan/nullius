@@ -1,0 +1,65 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: tests (python ${{ matrix.python }} on ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.10", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: git identity for the adapter tests
+        run: |
+          git config --global user.email ci@example.com
+          git config --global user.name ci
+      - run: python3 tests/test_gates.py
+
+  mutation:
+    name: the suite must be able to fail
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          git config --global user.email ci@example.com
+          git config --global user.name ci
+      # A green suite proves nothing unless it can go red. Break a gate on
+      # purpose; if the tests still pass, the tests are decorative and this
+      # job fails instead.
+      - name: break the depth gate, expect failures
+        run: |
+          python3 - <<'EOF'
+          import pathlib
+          p = pathlib.Path("gates/research_depth_gate.py")
+          s = p.read_text().replace(
+              "    bad = offending_claims(text, os.path.dirname(os.path.abspath(path)))",
+              "    bad = []  # injected mutant")
+          p.write_text(s)
+          EOF
+          if python3 tests/test_gates.py; then
+            echo "::error::suite passed with a broken gate — the tests do not test"
+            exit 1
+          fi
+          echo "suite correctly detected the mutant"
+
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - run: shellcheck -s sh adapters/git/pre-commit adapters/git/install.sh

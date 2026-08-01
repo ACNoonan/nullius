@@ -1,0 +1,70 @@
+#!/bin/sh
+# nullius :: portable enforcement
+#
+# The only layer that does not care which agent wrote the diff. Claude Code can
+# refuse a write; Cursor and Codex can only be asked nicely. Git refuses the
+# commit, for everyone, including the human typing by hand.
+#
+# Install:
+#   ln -s ~/.nullius/adapters/git/pre-commit .git/hooks/pre-commit
+#
+# Bypass, when you mean it:
+#   git commit --no-verify
+#
+# Exits 0 (allows) whenever the gates cannot run at all — same fail-open rule as
+# the write-time hooks. A pre-commit hook that breaks on a bad python path would
+# be removed by the first person it blocked.
+
+GATES="${NULLIUS_DIR:-$HOME/.nullius}/gates"
+PY="${NULLIUS_PYTHON:-python3}"
+
+[ -d "$GATES" ] || exit 0
+command -v "$PY" >/dev/null 2>&1 || exit 0
+
+ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+[ -f "$ROOT/.nullius.toml" ] || exit 0        # repo did not opt in
+
+# `git diff --cached` has nothing to diff against on a root commit and silently
+# lists no files — so the very first commit in a repo sailed through. Use the
+# empty-tree object as the base when HEAD does not exist yet, which is the
+# idiom git's own sample hooks use.
+if git rev-parse --verify HEAD >/dev/null 2>&1; then
+    AGAINST=HEAD
+else
+    AGAINST=$(git hash-object -t tree /dev/null)
+fi
+
+STAGED=$(git diff-index --cached --name-only --diff-filter=ACM "$AGAINST" \
+         -- '*.md' '*.txt' 2>/dev/null)
+[ -n "$STAGED" ] || exit 0
+
+FAILED=0
+for f in $STAGED; do
+    [ -f "$ROOT/$f" ] || continue
+    for g in research_depth_gate prereg_commitment_gate vocab_gate \
+             citation_attribution_gate marginal_gate; do
+        [ -f "$GATES/$g.py" ] || continue
+        # Reuse the write-time gates verbatim via the shared payload shape, so
+        # there is exactly one implementation of every rule.
+        OUT=$("$PY" "$GATES/_payload.py" "$ROOT/$f" 2>/dev/null \
+              | "$PY" "$GATES/$g.py" 2>/dev/null)
+        case "$OUT" in
+            *'"deny"'*)
+                printf '\n\033[31mBLOCKED\033[0m  %s\n' "$f"
+                printf '%s\n' "$OUT" | "$PY" -c 'import json,sys
+try:
+    d = json.load(sys.stdin)
+    print("  " + d["hookSpecificOutput"]["permissionDecisionReason"].split("\n")[0])
+except Exception:
+    pass' 2>/dev/null
+                FAILED=1
+                ;;
+        esac
+    done
+done
+
+if [ "$FAILED" -ne 0 ]; then
+    printf '\nCommit refused by nullius. Fix, or: git commit --no-verify\n\n'
+    exit 1
+fi
+exit 0
