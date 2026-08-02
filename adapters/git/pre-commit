@@ -42,7 +42,7 @@ FAILED=0
 for f in $STAGED; do
     [ -f "$ROOT/$f" ] || continue
     for g in research_depth_gate prereg_commitment_gate vocab_gate \
-             citation_attribution_gate marginal_gate; do
+             citation_attribution_gate marginal_gate ownership_gate; do
         [ -f "$GATES/$g.py" ] || continue
         # Reuse the write-time gates verbatim via the shared payload shape, so
         # there is exactly one implementation of every rule.

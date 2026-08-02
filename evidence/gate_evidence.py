@@ -6,15 +6,19 @@ Three contamination sources this handles explicitly:
   2. deliberate .hooktest runs are not research denials
   3. transcripts REPLAY on resume/compaction, so one firing appears N times
 """
-import json, glob, os, re, sys, collections
+import json, glob, os, re, sys, collections, hashlib
 
 import sys
 _pats = sys.argv[1:] or ["*"]          # e.g. "*myproject*"
 ROOTS = [d for p in _pats
          for d in glob.glob(os.path.expanduser(f"~/.claude/projects/{p}"))]
 
+# Order matters: the maths signature must be tried BEFORE the plain depth one,
+# because the maths denial also contains the literal "depth: full".
 GATE_BY_SIG = [
+    ("lose mathematics",               "research-depth-gate/maths"),
     ("depth: full",                    "research-depth-gate"),
+    ("ownership concession",           "ownership-gate"),
     ("commitments block",              "prereg-commitment-gate"),
     ("commitments undischarged",       "prereg-commitment-gate"),
     ("VOCAB.md",                       "vocab-gate"),
@@ -76,7 +80,25 @@ for root in ROOTS:
                     "session": os.path.basename(path)[:8],
                 }
 
+def redact(name):
+    """Target filenames name unpublished work and must not ship.
+
+    Redaction is done HERE rather than by hand after the fact, because the
+    committed artifact claimed redaction that this generator did not perform —
+    one forgotten manual pass and the next regeneration publishes the lot. The
+    hash is stable, so repeated firings on the same file stay visibly the same
+    file, which is what the table is read for.
+    """
+    if not name or name == "?":
+        return "?"
+    stem, dot, ext = name.rpartition(".")
+    h = hashlib.sha256((stem or name).encode()).hexdigest()[:4]
+    return f"«{h}»{dot}{ext}" if dot else f"«{h}»"
+
+
 ev = sorted(events.values(), key=lambda e: e["ts"])
+for e in ev:
+    e["target"] = redact(e["target"])
 print(f"transcripts scanned : {files_scanned}")
 print(f"lines scanned       : {lines_scanned:,}")
 print(f"UNIQUE DENIALS      : {len(ev)}\n")
@@ -95,11 +117,12 @@ import collections as _c
 out = [
     "# Gate firings — recovered from Claude Code transcripts",
     "",
-    f"Scanned **{files_scanned} transcripts** ({lines_scanned:,} records) across the",
+    f"Scanned **{files_scanned} transcripts** ({lines_scanned:,} records) across",
     "the scanned projects.",
     "",
     f"**{len(ev)} unique denials.** Every count below is deduplicated; the raw",
-    "text-match count is roughly 2.4x higher and is not usable.",
+    f"text-match count is {(len(ev) + sum(rejected.values())) / max(len(ev), 1):.1f}x "
+    "higher and is not usable.",
     "",
     "## What was excluded, and why",
     "",
@@ -109,7 +132,7 @@ out = [
 for k, n in rejected.most_common():
     out.append(f"| {n} | {k} |")
 out += ["",
-    "Each of those five is a way a naive `grep BLOCKED` overcounts. The hook",
+    f"Each of those {len(rejected)} is a way a naive `grep BLOCKED` overcounts. The hook",
     "source files contain the denial strings verbatim, so any session that read a",
     "hook inflates the count; templates carry an uninstantiated `{name}`;",
     "transcripts replay on resume and compaction.",
@@ -122,6 +145,9 @@ for d, n in sorted(_c.Counter(e["ts"][:10] for e in ev).items()):
     out.append(f"| {d} | {n} |")
 out += ["", "*Timestamps are UTC; the final day's rows are the prior evening local time.*",
         "", "## Every firing", "",
+        "*Target filenames are redacted — they name unpublished work. The token is a",
+        "stable hash, so the same file is recognisable across rows. Dates, gates and",
+        "violation types are verbatim.*", "",
         "| when (UTC) | gate | target | violation |", "|---|---|---|---|"]
 for e in ev:
     out.append(f"| {e['ts'].replace('T',' ')} | `{e['gate']}` | `{e['target']}` | {e['reason']} |")

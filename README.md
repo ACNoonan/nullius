@@ -16,7 +16,7 @@ amendment to a model: a summary of a paper is not the paper, and a note saying
 you read something is a claim, not evidence. The gates below take nobody's
 word for it — not the model's, and not yours.
 
-Not a prompt pack. Not a set of instructions asking a model to be careful. Seven
+Not a prompt pack. Not a set of instructions asking a model to be careful. Eight
 programs that read what is about to be written and **block the write** when the
 claim has nothing behind it.
 
@@ -64,13 +64,35 @@ against an artifact on disk, which is the only thing these gates consult.
 
 | gate | refuses |
 |---|---|
-| `research_depth_gate` | a `depth: full` claim on a source with no extraction on disk |
+| `research_depth_gate` | a `depth: full` claim on a source with no extraction on disk — **or** one whose extraction is known to have eaten the mathematics, unless the claim says where the maths came from |
 | `citation_attribution_gate` | a bibliography entry whose authors contradict the artifact it cites |
 | `prereg_commitment_gate` | a RESULT written while its pre-registered commitments sit undischarged |
 | `vocab_gate` | an identifier minted into a namespace nobody declared |
 | `marginal_gate` | an effective-sample-size claim with no marginal named |
+| `ownership_gate` | a concession — "we claim none of this" — over a source the ownership register says does *not* hold it |
 | `provenance` *(build)* | a paper whose bibliography has undeclared or off-register read depths |
 | `proseleak` *(build)* | internal lane IDs and workflow vocabulary reaching published prose |
+
+`ownership_gate` is the one that runs in the *other* direction. Every gate above
+it guards against claiming too much; that one guards against giving too much
+away. An over-concession is strictly harder to catch, because no referee's
+incentive runs that way — it took a hand audit, late, after a false concession to
+a 1965 textbook had already driven a project-level decision.
+
+### The instrument behind the depth gate
+
+`tools/extraction_integrity.py sweep` classifies a shelf of PDFs and writes the
+index the depth gate consults. It exists because **artifact presence is not
+artifact fidelity**: a sweep of 312 papers found 48 whose text layer silently
+loses mathematics, and six `.pdf` files that were Cloudflare block pages rather
+than papers — one with an 85 KB `.txt` beside it. Born-digital LaTeX is affected,
+not just scans: `C(γ*)` extracts as `C ( )` and `δ_t` as `t`, a different variable
+that also exists in the paper, so the corrupted line stays syntactically valid.
+
+There is no text pipeline that recovers displayed mathematics — `-layout`, `-raw`
+and per-page all read the same layer and agree with the error. The tool triages
+and routes to the page image; it never repairs an extraction. With no index
+built, that half of the depth gate is silently inert.
 
 ## The two rules everything here obeys
 
@@ -120,9 +142,12 @@ that.
 
 ## Evidence
 
-`evidence/EVIDENCE.md` records every firing recovered from five days of real
-research sessions — 76 unique denials across 159 transcripts, with the
-rejection table showing what a naive count would have overstated and why.
+`evidence/EVIDENCE.md` records every firing recovered from seven days of real
+research sessions — 127 unique denials across 169 transcripts, with the
+rejection table showing what a naive count would have overstated and why (2.9x,
+mostly transcripts replaying on resume). Both newest gates are in there:
+`ownership_gate` fired 6 times and the depth gate's maths-fidelity half twice,
+within a day of being installed.
 
 The gates' claim to work is not that they exist. It is that they fired, on
 specific files, on specific dates, against a working researcher who wanted to

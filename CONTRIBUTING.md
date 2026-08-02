@@ -26,7 +26,7 @@ test observes, that job is where you find out.
 unreadable input, or unexpected shape. Wrap your entry point; return 0 on
 anything unexpected. A gate that blocks work because the gate broke gets
 uninstalled within a week, and then nothing is enforced at all. There are
-fail-open tests for all five gates — add one for yours.
+fail-open tests for all six gates — add one for yours.
 
 **Opt in.** Gates apply only inside a tree holding `.nullius.toml`. Never
 widen that. Somebody has this installed globally and does not want their
@@ -46,12 +46,15 @@ If you add a pattern, say in a comment what it fired on and what it should not.
 ## Before you open a PR
 
 ```sh
-python3 tests/test_gates.py          # 26 checks, all must pass
+python3 tests/test_gates.py          # 48 checks, all must pass
 shellcheck -s sh adapters/git/*      # if you touched the shell
 ```
 
 Run the mutation check by hand if you changed gate logic: break your gate,
-confirm the suite goes red, restore it.
+confirm the suite goes red, restore it. If it stays green, your gate has no
+test — that is how the citation gate was found to have none, after months in
+the tree. Add the mutant to the `mutation` job in `.github/workflows/ci.yml`;
+it errors rather than skips when a search string drifts out of the source.
 
 ## Adding a depth label
 

@@ -65,7 +65,8 @@ except Exception:                                # never let config break a gate
 
 ROOTS: tuple = ()          # set by main() once the target path is known
 
-HEAD_LINES = 80          # title/author block; 2603.01162 needs ~17, arXiv stamps interleave
+HEAD_LINES = 80          # NON-BLANK title/author lines; 2603.01162 needs ~17, PMC chrome ~50
+MAX_SCAN_LINES = 20000   # raw-line ceiling so an all-whitespace file still terminates
 TITLE_MIN_FRAC = 0.60    # fraction of significant title words that must appear
 MIN_TITLE_WORDS = 3      # below this, skip the title check as unreliable
 
@@ -112,9 +113,22 @@ def head_of(path: str) -> str | None:
         if not os.path.isfile(txt):
             return None
         path = txt
+    # Count NON-BLANK lines. Counting raw lines let whitespace defeat the window:
+    # one PMC extraction carries a SINGLE non-blank line in its first 80 raw lines
+    # and puts its author "Steven Teerenstra" at raw line 949 — non-blank line 51 —
+    # so the gate reported a false AUTHOR/PAPER failure on a correct entry. A gate
+    # that cries wolf gets ignored, which is the same as having no gate.
     try:
+        lines, scanned = [], 0
         with open(path, "r", encoding="utf-8", errors="replace") as fh:
-            lines = [next(fh, "") for _ in range(HEAD_LINES)]
+            for raw in fh:
+                scanned += 1
+                if raw.strip():
+                    lines.append(raw)
+                    if len(lines) >= HEAD_LINES:
+                        break
+                if scanned >= MAX_SCAN_LINES:   # an all-whitespace file must terminate
+                    break
     except Exception:
         return None
     head = "".join(lines)
@@ -199,6 +213,29 @@ def check_entry(key: str, rest: str, block: str) -> list[str]:
                     f"{os.path.basename(art)}'s head — below the {TITLE_MIN_FRAC:.0%} "
                     f"floor. The key may point at a different paper than the entry "
                     f"describes.")
+
+    # -- BOTH failing is a MISPLACED WINDOW, not a misattribution --------------
+    # Added after a CORRECT entry failed both checks: its artifact is a whole
+    # journal issue, so ~150 non-blank lines of masthead precede the article and
+    # the window never reaches the byline.
+    # The two signatures are distinguishable, which is what makes this safe:
+    #   title PRESENT + author ABSENT  -> the window found the right article and
+    #                                     the author is wrong. That is the real
+    #                                     error, and it is the Zhang/Zhou case
+    #                                     this gate was built for.
+    #   title ABSENT  + author ABSENT  -> the window never reached the article.
+    #                                     Unresolvable here; say so rather than
+    #                                     assert a misattribution we cannot see.
+    # Downgrading only the second signature keeps every genuine catch and removes
+    # the false alarm that would otherwise train a reader to ignore it.
+    if len(fails) == 2:
+        return [f"UNRESOLVED (not a failure): neither '{surname}' nor the title "
+                f"appears in the first {HEAD_LINES} non-blank lines of "
+                f"{os.path.basename(art)}. Both checks failing together is the "
+                f"signature of a window that never reached the article — journal "
+                f"front matter, an issue-level PDF, or a cover page — not of a "
+                f"misattribution, which shows up as title-present/author-absent. "
+                f"Verify by hand; the gate cannot decide this one."]
     return fails
 
 
@@ -213,25 +250,43 @@ def entries_in(text: str) -> list[tuple[str, str, str]]:
 
 
 def audit(path: str) -> int:
+    # The audit path must resolve ROOTS too. Without it `find_artifact` can only
+    # try the entry's literal relative path, so every artifact goes unresolved and
+    # the sweep reports "0 failing" over a bibliography it never actually checked
+    # — a green result that means nothing, which is the worst thing this tool can
+    # produce. Caught by a test asserting the resolved-artifact COUNT, not the
+    # verdict; the verdict looked fine.
+    global ROOTS
+    ROOTS = roots_for(path)
     try:
         text = open(path, encoding="utf-8", errors="replace").read()
     except Exception as e:
         print(f"cannot read {path}: {e}")
         return 0
     ents = entries_in(text)
-    bad = 0
+    bad = unresolved = 0
     for key, rest, block in ents:
         fails = check_entry(key, rest, block)
-        if fails:
-            bad += 1
+        if not fails:
+            continue
+        # UNRESOLVED is a report, not a verdict: it must not fail the audit, or
+        # the sweep cries wolf and stops being run.
+        if all(f.startswith("UNRESOLVED") for f in fails):
+            unresolved += 1
             print(f"\n[{key}]")
             for f in fails:
-                print(f"  ✗ {f}")
+                print(f"  ? {f}")
+            continue
+        bad += 1
+        print(f"\n[{key}]")
+        for f in fails:
+            print(f"  ✗ {f}")
     checked = sum(1 for k, r, b in ents if PERSONAL_RE.match(r))
     withart = sum(1 for k, r, b in ents if PERSONAL_RE.match(r) and find_artifact(b))
     print(f"\n{len(ents)} entries, {checked} with a personal first author, "
           f"{withart} with a resolvable artifact (author+title checked), "
-          f"{bad} failing.")
+          f"{bad} failing, {unresolved} unresolved (window never reached the "
+          f"article — verify by hand, not a defect in the entry).")
     return 1 if bad else 0
 
 
@@ -263,6 +318,11 @@ def main() -> int:
     all_fails: list[str] = []
     for key, rest, block in entries_in(text):
         all_fails += check_entry(key, rest, block)
+
+    # Never BLOCK on an unresolvable window — that is the gate admitting it cannot
+    # see, and blocking on it is exactly how a gate earns the reputation that gets
+    # it switched off. Surfaced by the --audit sweep instead.
+    all_fails = [f for f in all_fails if not f.startswith("UNRESOLVED")]
 
     if all_fails:
         reason = ("BLOCKED — a bibliography entry contradicts the paper on disk.\n\n"

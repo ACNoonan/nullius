@@ -37,24 +37,45 @@ jobs:
       - run: |
           git config --global user.email ci@example.com
           git config --global user.name ci
-      # A green suite proves nothing unless it can go red. Break a gate on
-      # purpose; if the tests still pass, the tests are decorative and this
-      # job fails instead.
-      - name: break the depth gate, expect failures
+      # A green suite proves nothing unless it can go red. Break each gate on
+      # purpose, one at a time; if the tests still pass, the tests are decorative
+      # and this job fails instead.
+      #
+      # Every mutant must also APPLY. A mutation job whose search string has
+      # drifted out of the source silently tests nothing, which is the same
+      # failure the gates themselves exist to catch — so an unapplied mutant is
+      # an error here, not a skip.
+      - name: break each gate in turn, expect failures
         run: |
           python3 - <<'EOF'
-          import pathlib
-          p = pathlib.Path("gates/research_depth_gate.py")
-          s = p.read_text().replace(
-              "    bad = offending_claims(text, os.path.dirname(os.path.abspath(path)))",
-              "    bad = []  # injected mutant")
-          p.write_text(s)
+          import pathlib, shutil, subprocess, sys
+
+          MUTANTS = [
+              ("gates/research_depth_gate.py",
+               "        bad, lossy = offending_claims(text, os.path.dirname(os.path.abspath(path)))",
+               "        bad, lossy = [], []  # injected mutant"),
+              ("gates/ownership_gate.py",
+               "    fails = check_text(text, excl)",
+               "    fails = []  # injected mutant"),
+              ("gates/citation_attribution_gate.py",
+               "        all_fails += check_entry(key, rest, block)",
+               "        all_fails += []  # injected mutant"),
+          ]
+
+          for path, old, new in MUTANTS:
+              p = pathlib.Path(path)
+              orig = p.read_text()
+              if old not in orig:
+                  print(f"::error::mutant for {path} did not apply — search string has drifted")
+                  sys.exit(1)
+              p.write_text(orig.replace(old, new, 1))
+              rc = subprocess.run([sys.executable, "tests/test_gates.py"]).returncode
+              p.write_text(orig)
+              if rc == 0:
+                  print(f"::error::suite passed with {path} broken — the tests do not test")
+                  sys.exit(1)
+              print(f"suite correctly detected the {path} mutant")
           EOF
-          if python3 tests/test_gates.py; then
-            echo "::error::suite passed with a broken gate — the tests do not test"
-            exit 1
-          fi
-          echo "suite correctly detected the mutant"
 
   shellcheck:
     name: shellcheck

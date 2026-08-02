@@ -30,6 +30,16 @@ claims. A model's summary of a paper is never a premise.
 A summarizer's *"the paper doesn't mention X"* is not evidence of absence. Say
 "grepped the full text", or say you didn't.
 
+**An artifact existing is not an artifact being right.** A PDF text layer
+routinely deletes mathematics with nothing to warn you: `C(γ*)` extracts as
+`C ( )`, `δ_t` as `t` — a *different variable that also exists in the paper*, so
+the corrupted line stays syntactically valid. A `.pdf` that is really a
+Cloudflare block page is an artifact that is not the paper at all. Where a paper
+is flagged maths-unsafe, a `full` claim must state the channel the mathematics
+came from — `maths: image`, `maths: unread`, or `maths: n/a`. Never re-run the
+extraction in another mode as a control: every mode reads the same layer and
+agrees with the error. The page image is the only authority.
+
 **Verify the instrument before trusting the number.** Before reporting a result,
 state at least one check that *could have come out wrong*, and what a failure
 would have looked like. A check that cannot fail is not evidence, and reporting
@@ -43,6 +53,12 @@ a `VOCAB.md`, add the row before using the name.
 
 **An effective sample size is meaningless without its marginal.** Never write one
 without naming what is being resampled.
+
+**Do not concede more than you owe.** An over-concession is as damaging as an
+over-claim and strictly harder to catch, because no referee's incentive runs that
+way. If a project keeps an ownership register, do not write "we claim none of
+this" over a source the register records as *not* holding it — name the
+exclusion's scope in the same paragraph, or amend the register.
 
 **Never let internal vocabulary reach published prose** — lane IDs, workflow
 words, tool codenames. Run `gates/proseleak.py` before shipping any document.

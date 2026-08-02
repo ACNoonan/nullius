@@ -15,10 +15,39 @@ WHY (2026-07-27)
     on disk and can be grepped.
 
 WHAT THIS BLOCKS
-    A Write/Edit to a research document that declares depth `full` without any
+    (1) A Write/Edit to a research document that declares depth `full` without any
     resolvable path to the extraction on the same line or the two following it.
-    Nothing else. The instrument-verification gate lives in code, in
-    `harness/verdict.py :: emit_verdict`, which is stronger than text matching.
+
+    (2) A `depth: full` claim whose artifact IS on disk but whose text layer is
+    known to delete mathematics, unless the claim says which channel the maths
+    came from. Nothing else. The instrument-verification gate belongs in code —
+    a text hook cannot check an instrument — and is out of scope here.
+
+WHY (2) — ARTIFACT PRESENCE IS NOT ARTIFACT FIDELITY
+    The original gate proved a file exists. It cannot tell whether that file says
+    what the page says. Sweeping 312 shelf PDFs found 48 maths-unsafe, and the
+    failure is silent: Patton (2013), born-digital LaTeX, renders `C(γ*)` as
+    `C ( )` and `δ_t` as `t` — a different variable that also exists in the paper,
+    so the corrupted line stays syntactically valid. Rychlik (1994) lost a
+    denominator worth 901× at the operating point it was being read for. Six shelf
+    `.pdf` files were not PDFs at all (Cloudflare/JSTOR block pages), one with an
+    85 KB `.txt` beside it — so an artifact can exist, be non-empty, be the WRONG
+    DOCUMENT, and pass check (1).
+
+    This is a flag, not a wall, and deliberately so: a paper can be read in full
+    and understood correctly from a lossy text layer, as long as no equation was
+    taken from it. What the gate demands is that the claim SAY so, using one of:
+
+        maths: image    equations read off rendered page images
+                        (`tools/extraction_integrity.py page <stem> <page>`)
+        maths: unread   prose only; no equation, constant or bound from this paper
+                        has entered the work
+        maths: n/a      the paper contains no mathematics
+
+    The flag is checkable in the weak sense the rest of this hook is checkable —
+    it separates a specific claim from a bare one, and cannot verify that anyone
+    looked. The index it consults is written by `tools/extraction_integrity.py
+    sweep`; with no index, this half is silently inert.
 
 WHAT THIS DELIBERATELY DOES NOT DO
     It cannot check that the paper was actually read, only that the artifact the
@@ -46,6 +75,19 @@ except Exception:                                # never let config break a gate
     def roots_for(_path):
         return ()
 
+# Resolved once per write, in main(), from the target path. It is a MODULE global
+# rather than a parameter threaded through six helpers because the helpers are
+# also called by the test suite and the git adapter.
+#
+# It used to be neither: helpers called `roots_for(path)` where no `path` was in
+# scope, which raised NameError inside main()'s try and FAILED OPEN — silently, on
+# exactly the two shapes this gate exists for. A claim naming a bibliography key
+# (`### [smith2020]`) or an arXiv id was never gated at all, because those are the
+# branches that reach the shelf lookups; only the bare `depth: full` with no source
+# named was still caught. Caught 2026-08-02 by probing a real bibliography entry
+# through the hook, not by the suite, which only ever fed it the bare shape.
+ROOTS: tuple = ()
+
 # Documents where a depth register is meaningful. Scratch .py files are exempt.
 DOC_RE = re.compile(r"\.(md|txt)$", re.I)
 
@@ -55,7 +97,11 @@ DOC_RE = re.compile(r"\.(md|txt)$", re.I)
 EXEMPT_RE = re.compile(r"/papers/", re.I)
 
 # `depth: full`, `**depth** | `full``, `- **Depth on X: `full`.**` and friends.
-DEPTH_RE = re.compile(r"depth[^\n]{0,80}?[`'\"*\s|:]full[`'\"*\s.,)]", re.I)
+#
+# The trailing delimiter is a LOOKAHEAD and `$` is an alternative: this once required
+# a character AFTER `full`, so a line ending exactly at `**Depth:** full` — the most
+# natural way to write it — was never gated at all. Found by a gate test, not in use.
+DEPTH_RE = re.compile(r"depth[^\n]{0,80}?[`'\"*\s|:]full(?=[`'\"*\s.,)]|$)", re.I)
 
 # The DECLARED label — the first vocabulary word after "Depth". Gating on the mere
 # presence of "full" anywhere in the line flagged
@@ -116,7 +162,7 @@ def shelf_ids() -> set[str]:
     global _SHELF
     if _SHELF is None:
         ids: set[str] = set()
-        for root in roots_for(path):
+        for root in ROOTS:
             for sub in ("papers", "papers/pdfs", "sources"):
                 d = os.path.join(root, sub)
                 if not os.path.isdir(d):
@@ -128,6 +174,75 @@ def shelf_ids() -> set[str]:
                     pass
         _SHELF = ids
     return _SHELF
+
+
+# --- maths-fidelity side -----------------------------------------------------
+# Written by `tools/extraction_integrity.py sweep`. Absent or unreadable => this
+# half of the gate is silently inert, which is the correct trade: a fidelity check
+# that blocks work because its index was never built would be disabled in a day.
+#
+# Searched in this order under the governing root, first hit wins. `.nullius/` is
+# the default the sweeper writes to; the other two are for projects that keep the
+# shelf and its index together.
+INDEX_PATHS = (
+    os.path.join(".nullius", "extraction_integrity.json"),
+    os.path.join("papers", "extraction_integrity.json"),
+    "extraction_integrity.json",
+)
+
+_UNSAFE: dict[str, str] | None = None
+
+MATHS_FLAG_RE = re.compile(r"maths?\W{0,4}(image|unread|n/?a)\b", re.I)
+
+
+def unsafe_index() -> dict[str, str]:
+    """{identifier: class} for every maths-unsafe artifact, keyed several ways.
+
+    Keyed by arXiv id, by PDF stem and by text-extraction stem, because a claim may
+    name any of the three and the gate should not care which.
+    """
+    global _UNSAFE
+    if _UNSAFE is None:
+        idx: dict[str, str] = {}
+        for root in ROOTS:
+            for rel in INDEX_PATHS:
+                try:
+                    with open(os.path.join(root, rel)) as fh:
+                        rows = json.load(fh)
+                except Exception:
+                    continue
+                if not isinstance(rows, list):
+                    continue
+                for r in rows:
+                    if not isinstance(r, dict) or not r.get("maths_unsafe"):
+                        continue
+                    cls = r.get("cls", "maths-unsafe")
+                    pdf = r.get("pdf", "")
+                    stem = pdf[:-4] if pdf.endswith(".pdf") else pdf
+                    for key in (stem, re.sub(r"^arxiv-", "", stem), r.get("text") or ""):
+                        if key:
+                            idx[key.lower().removesuffix(".txt")] = cls
+                    for m in ARXIV_RE.finditer(pdf):
+                        idx[m.group(1)] = cls
+                break                      # first index found under this root wins
+        _UNSAFE = idx
+    return _UNSAFE
+
+
+def unsafe_in(window: str) -> tuple[str, str] | None:
+    """The first maths-unsafe artifact this claim names, if any."""
+    idx = unsafe_index()
+    if not idx:
+        return None
+    for m in ARXIV_RE.finditer(window):
+        if m.group(1) in idx:
+            return m.group(1), idx[m.group(1)]
+    # Path- and bibkey-shaped mentions: match on the basename stem.
+    for m in re.finditer(r"[\w.-]+(?=\.(?:pdf|txt)\b)|\[([a-z][a-z-]+\d{4}[a-z]?)\]", window):
+        tok = (m.group(1) or m.group(0)).lower()
+        if tok in idx:
+            return tok, idx[tok]
+    return None
 
 
 def resolves(path: str, doc_dir: str) -> bool:
@@ -147,7 +262,7 @@ BIBKEY_RE = re.compile(r"\[([a-z][a-z-]+\d{4}[a-z]?)\]")
 def bibkey_extracted(window: str) -> bool:
     """True if a citation key in the window has an extraction saved under papers/text/."""
     for m in BIBKEY_RE.finditer(window):
-        for root in roots_for(path):
+        for root in ROOTS:
             for ext in (".txt", ".pdf", ".md"):
                 if os.path.exists(os.path.join(root, "papers", "text", m.group(1) + ext)):
                     return True
@@ -175,7 +290,11 @@ VOCAB = ("full", "fetch-summary", "snippet", "unsearched")
 # a claim to gate. Matching it was a false positive on the swarm-moe intake note.
 NEGATED_RE = re.compile(
     r"(?:zero|none|no|not|never|without|un-?read|yet to be|pending)\b[^.\n]{0,40}full"
-    r"|full[^.\n]{0,30}\b(?:not|never|pending|outstanding|missing)\b",
+    r"|full[^.\n]{0,30}\b(?:not|never|pending|outstanding|missing)\b"
+    # "Depth note: this is a *grep of the full text*" states a LOWER depth in prose
+    # rather than by vocabulary word. Self-limitation is the behaviour we want; gating
+    # it teaches people to stop writing the caveat.
+    r"|\bgrep(?:ped)?\s+(?:of|over|across)\s+the\s+full",
     re.I,
 )
 
@@ -185,10 +304,16 @@ def is_vocabulary_definition(line: str) -> bool:
     return sum(term in low for term in VOCAB) >= 2 or "∈" in line
 
 
-def offending_claims(text: str, doc_dir: str) -> list[str]:
-    """Return depth-full claims with no artifact nearby. Empty list = allow."""
+def offending_claims(text: str, doc_dir: str) -> tuple[list[str], list[tuple[str, str, str]]]:
+    """Depth-full claims with no artifact, and those resting on a lossy artifact.
+
+    Returns (missing_artifact, unflagged_maths). Both empty = allow. A claim can only
+    appear in one: if the artifact is absent that is the first thing to fix, and
+    asking for a maths flag on a file that is not there would be noise.
+    """
     lines = text.splitlines()
-    bad = []
+    bad: list[str] = []
+    lossy: list[tuple[str, str, str]] = []
     for i, line in enumerate(lines):
         declared = DECLARED_RE.search(line)
         if declared and declared.group(1).lower() != "full":
@@ -210,14 +335,16 @@ def offending_claims(text: str, doc_dir: str) -> list[str]:
         # off by one and rejected an entry whose extraction was on disk. Two
         # forward covers a wrapped register row.
         window = "\n".join(lines[max(0, i - 6):i + 3])
-        if EVIDENCE_RE.search(window):
+        backed = (EVIDENCE_RE.search(window)
+                  or papers_on_shelf(window) or bibkey_extracted(window)
+                  or any(resolves(m.group(0), doc_dir) for m in PATH_RE.finditer(window)))
+        if not backed:
+            bad.append(line.strip()[:160])
             continue
-        if papers_on_shelf(window) or bibkey_extracted(window):
-            continue
-        if any(resolves(m.group(0), doc_dir) for m in PATH_RE.finditer(window)):
-            continue
-        bad.append(line.strip()[:160])
-    return bad
+        hit = unsafe_in(window)
+        if hit and not MATHS_FLAG_RE.search(window):
+            lossy.append((line.strip()[:140], hit[0], hit[1]))
+    return bad, lossy
 
 
 def main() -> int:
@@ -235,15 +362,50 @@ def main() -> int:
         path = ti.get("file_path", "")
         if not path or not DOC_RE.search(path) or EXEMPT_RE.search(path):
             return 0
-        if not any(os.path.abspath(path).startswith(r) for r in roots_for(path)):
+        global ROOTS
+        ROOTS = roots_for(path)
+        if not any(os.path.abspath(path).startswith(r) for r in ROOTS):
             return 0
 
         text = ti.get("content") or ti.get("new_string") or ""
         if not text:
             return 0
 
-        bad = offending_claims(text, os.path.dirname(os.path.abspath(path)))
+        bad, lossy = offending_claims(text, os.path.dirname(os.path.abspath(path)))
+        if not bad and not lossy:
+            return 0
+
         if not bad:
+            claims = "\n".join(f"    {c}\n      └─ {who} is {cls}" for c, who, cls in lossy[:3])
+            reason = (
+                "BLOCKED — a `depth: full` claim resting on an artifact whose text layer "
+                "is known to lose mathematics.\n\n"
+                f"In {os.path.basename(path)}:\n{claims}\n\n"
+                "The file is on disk; that is not in question. What is in question is "
+                "whether it says what the page says. A born-digital LaTeX paper can "
+                "extract `C(γ*)` as `C ( )` and `δ_t` as `t` — still syntactically "
+                "valid, silently wrong — and a `.pdf` that is really a block page is "
+                "an artifact that is not the paper at all.\n\n"
+                "To proceed, add ONE of these to the claim:\n"
+                "  maths: image    — equations read off rendered page images\n"
+                "                    (tools/extraction_integrity.py page <stem> <page>)\n"
+                "  maths: unread   — prose only; no equation, constant or bound from this\n"
+                "                    paper has entered the work\n"
+                "  maths: n/a      — the paper contains no mathematics\n\n"
+                "Full details for this paper: tools/extraction_integrity.py check <stem>\n"
+                "Do NOT re-run pdftotext in another mode. Every mode reads the same layer "
+                "and agrees with the error."
+            )
+            try:
+                from _gatelog import record as _rec
+                _rec("research-depth-gate/maths", reason, path)
+            except Exception:
+                pass
+            print(json.dumps({"hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": reason,
+            }}))
             return 0
 
         claims = "\n".join(f"    {c}" for c in bad[:3])
