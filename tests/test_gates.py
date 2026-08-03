@@ -189,6 +189,75 @@ def test_ownership(tmp):
                        "We claim none of this; it is [kish1965].\n"))
 
 
+def test_firing_ledger(tmp):
+    """The ledger must record real firings and must not record ours.
+
+    This suite used to append every firing it provoked to the user's real
+    ledger, because `_gatelog.LEDGER` was a constant and nothing could redirect
+    it. 177 of 220 rows on 2026-08-03 were rows this file wrote. Nothing caught
+    it: the ledger had no test at all, and a poisoned ledger reads exactly like
+    a busy one.
+
+    So the second check here is the one that matters. Asserting that a row got
+    written proves the logger works; only asserting that it went NOWHERE ELSE
+    proves the redirect does, and that is the direction that failed.
+    """
+    print("\nfiring ledger")
+    sys.path.insert(0, GATES)
+    try:
+        import _gatelog
+    finally:
+        sys.path.pop(0)
+
+    on = os.path.join(tmp, "ledger"); os.makedirs(on)
+    open(os.path.join(on, ".nullius.toml"), "w").close()
+    n = os.path.join(on, "n.md")
+
+    # What the ledger would be if this suite had not redirected it — i.e. the
+    # user's own file. Snapshot its size, provoke a denial, require no change.
+    redirected = os.environ.pop("NULLIUS_LEDGER")
+    real = _gatelog.ledger_path()
+    os.environ["NULLIUS_LEDGER"] = redirected
+    before = os.path.getsize(real) if os.path.exists(real) else None
+
+    check("redirect is in force", _gatelog.ledger_path() == redirected)
+    check("a denial appends a row", run_gate("research_depth_gate", n, UNBACKED)
+          and os.path.exists(redirected))
+
+    rows = [json.loads(l) for l in open(redirected, encoding="utf-8") if l.strip()]
+    check("the row names the gate and the target",
+          any(r.get("gate") == "research-depth-gate" and r.get("target", "").endswith("n.md")
+              for r in rows))
+    check("the row carries no file content",
+          all("depth: full — extracted" not in json.dumps(r) for r in rows))
+
+    after = os.path.getsize(real) if os.path.exists(real) else None
+    check("the real ledger is untouched", after == before,
+          f"{real} went {before} -> {after}")
+
+    n_before = len(rows)
+    run_gate("research_depth_gate", n, BACKED)
+    rows = [l for l in open(redirected, encoding="utf-8") if l.strip()]
+    check("an allowed write appends nothing", len(rows) == n_before)
+
+    # The stamp must not count the rows this suite just wrote. Both directions:
+    # a temp target is synthetic, a target under a real tree is not — a filter
+    # that excluded everything would pass a one-sided test perfectly.
+    sys.path.insert(0, GATES)
+    try:
+        import provenance
+    finally:
+        sys.path.pop(0)
+    check("a temp-dir firing is synthetic", provenance.is_synthetic(n))
+    check("a .hooktest firing is synthetic",
+          provenance.is_synthetic("/home/r/paper/.hooktest.md"))
+    check("an in-repo gate probe is synthetic",
+          provenance.is_synthetic("/home/r/experiments/_gatetest.md"))
+    check("a real research path is not synthetic",
+          not provenance.is_synthetic(os.path.join(ROOT, "paper", "references.md")))
+    check("an empty target is not synthetic", not provenance.is_synthetic(""))
+
+
 def test_citation_attribution(tmp):
     """The gate's whole point: the entry says one name, the artifact says another.
 
@@ -322,10 +391,17 @@ def test_git_adapter(tmp):
 
 def main():
     tmp = tempfile.mkdtemp(prefix="nullius-test-")
+    # Every gate this suite provokes logs a firing. Send those somewhere
+    # disposable BEFORE the first one runs — subprocesses inherit this — or the
+    # suite writes its fixtures into the user's real evidence ledger, which is
+    # what it did until 2026-08-03. Set here rather than in a fixture so there
+    # is no ordering by which a test runs unredirected.
+    os.environ["NULLIUS_LEDGER"] = os.path.join(tmp, "gate-firings.jsonl")
     try:
         for t in (test_opt_in, test_no_false_positive, test_depth_claim_shapes,
-                  test_maths_fidelity, test_ownership, test_citation_attribution,
-                  test_fail_open, test_proseleak, test_git_adapter):
+                  test_maths_fidelity, test_ownership, test_firing_ledger,
+                  test_citation_attribution, test_fail_open, test_proseleak,
+                  test_git_adapter):
             t(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

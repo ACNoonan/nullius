@@ -140,18 +140,54 @@ enforcement. **The portable enforcement layer is the git hook**, which does not
 care which agent or human produced the diff. If you install one thing, install
 that.
 
+### Environment
+
+| variable | what it sets | default |
+|---|---|---|
+| `NULLIUS_LEDGER` | where firings are appended | `$XDG_STATE_HOME/nullius/gate-firings.jsonl`, or `~/.claude/hooks/gate-firings.jsonl` if that file already exists |
+| `NULLIUS_SHELF` | the PDF shelf `extraction_integrity.py` sweeps | `papers/` under the governed root |
+
+Point `NULLIUS_LEDGER` at a scratch file whenever you exercise the gates
+deliberately. The ledger is the artifact you will later cite, and a test run
+writes rows indistinguishable from real ones — which is exactly what happened
+here: 177 of 220 rows in the author's own ledger were this project's test suite,
+and `provenance.py` would have stamped all 220 into a paper. Both are fixed, the
+suite redirects itself, and the stamp now reports what it excluded.
+
 ## Evidence
 
-`evidence/EVIDENCE.md` records every firing recovered from seven days of real
-research sessions — 127 unique denials across 169 transcripts, with the
-rejection table showing what a naive count would have overstated and why (2.9x,
-mostly transcripts replaying on resume). Both newest gates are in there:
-`ownership_gate` fired 6 times and the depth gate's maths-fidelity half twice,
-within a day of being installed.
+`evidence/EVIDENCE.md` records every firing recovered from eight days of real
+research sessions — **97 unique denials across 371 transcripts**, with a
+rejection table showing what a naive count would have overstated and why.
 
-The gates' claim to work is not that they exist. It is that they fired, on
-specific files, on specific dates, against a working researcher who wanted to
-write something else.
+That figure went **down** in this release, and the reason is worth stating
+plainly, because it is the failure this project exists to catch.
+
+Earlier tables were built by searching transcripts for the denial text. But a
+session that *works on these gates* fills its transcript with their denial
+strings — the diff, the file being written, the test harness printing its
+positive controls — and a text search cannot tell that from a gate refusing
+someone's claim. The generator now identifies a firing by its structure (an
+errored hook result whose text begins with the marker) rather than by matching
+text. Scored against the old filters on one identical scan, that took the count
+from **127 to 96** — 31 rows had been this project quoting itself. `grep BLOCKED`
+over the same transcripts still returns 6.4x the real number. (The committed
+table tracks a live corpus, so its total moves as sessions accrue; 127→96 is the
+paired comparison.)
+
+Two corrections fall out of that, both against our own earlier claims:
+
+- **`ownership_gate` has never fired on live work.** The over-concession it was
+  built for was caught by hand, and the gate was then validated by replaying
+  that section as a positive control. A previous README read those replays as
+  six firings. It catches the case; it has not yet caught a new one.
+- **The depth gate's maths-fidelity half likewise has no live firing** — its two
+  recorded hits were writes to a deliberate probe file.
+
+The gates' claim to work is not that they exist, and not that a log is long. It
+is that they fired, on specific files, on specific dates, against a working
+researcher who wanted to write something else — and that the count of those
+firings is itself produced by an instrument that was checked.
 
 ## License
 

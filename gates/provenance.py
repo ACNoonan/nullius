@@ -41,6 +41,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 
 # The register vocabulary. `partial` and `abstract` are tolerated by
 # research-depth-gate.py's DECLARED_RE but are not canonical, so they are
@@ -50,7 +51,14 @@ TOLERATED = {"partial", "abstract"}
 
 ENTRY_RE = re.compile(r"^###\s+\[([^\]]+)\]", re.M)
 DEPTH_RE = re.compile(r"\*\*Depth:?\*\*\s*(.+)$", re.I | re.M)
-LEDGER = os.path.expanduser("~/.claude/hooks/gate-firings.jsonl")
+# Resolved the same way the gates resolve it when they write, or the stamp
+# reads a ledger nothing has been writing to and reports a confident zero.
+try:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from _gatelog import ledger_path as _ledger_path
+    LEDGER = _ledger_path()
+except Exception:
+    LEDGER = os.path.expanduser("~/.claude/hooks/gate-firings.jsonl")
 TRANSCRIPTS = os.path.expanduser("~/.claude/projects")
 
 
@@ -101,18 +109,71 @@ def read_depths(refs_path: str):
     return keys, depths, missing
 
 
+TEMP_ROOTS = tuple(os.path.realpath(p) for p in
+                   (tempfile.gettempdir(), "/tmp", "/var/folders", "/private/tmp",
+                    "/private/var/folders"))
+
+
+def is_synthetic(target: str) -> bool:
+    """A firing provoked by a test fixture rather than by research.
+
+    The ledger is append-only and shared, so it accumulates whatever fires:
+    a test suite exercising the gates, a `.hooktest` probe, a canary commit from
+    the git installer. None of those are evidence that a gate caught a claim,
+    and on 2026-08-03 they were 177 of 220 rows — so a stamp that counted the
+    file raw would have disclosed 220 firings where 43 had happened. That is a
+    typed number wearing a derived number's clothes, in the one block of a paper
+    whose entire warrant is that nothing in it was typed.
+
+    The test is the target's location, not its name: research does not live in
+    a temp directory. Excluded rows are counted and reported, never dropped
+    quietly — an exclusion nobody can see is indistinguishable from a filter
+    that is silently eating real firings.
+
+    WHAT THIS CANNOT SEE, stated because it is load-bearing: a positive control
+    replays real text through a gate to prove the gate catches it. The write is
+    to a real path, so the ledger records it exactly as it would record a
+    genuine catch, and nothing here can tell them apart. One row in the author's
+    own ledger is that. `evidence/gate_evidence.py`, which reads transcripts
+    rather than the ledger, does see the difference — the control announces
+    itself in the surrounding session. Where the two instruments disagree,
+    prefer the transcript: it has the context this file does not.
+    """
+    if not target:
+        return False
+    # A probe file lives in the repo, not in a temp dir, so location alone misses
+    # it. All three of the ledger's non-temp rows for the two newest gates were
+    # these: two `_gatetest.md` writes and one positive control replaying a
+    # paper section the gate was built from. A gate verified against a fixture
+    # has been verified; it has not caught anything.
+    base = os.path.basename(target)
+    if ".hooktest" in target or re.match(r"^_?(gate|hook)test", base):
+        return True
+    try:
+        real = os.path.realpath(target)
+    except Exception:
+        real = target
+    return any(real.startswith(r + os.sep) for r in TEMP_ROOTS)
+
+
 def read_gate_firings():
-    """Firings from the append-only ledger. Absent ledger is reported as such,
-    never as zero — a missing instrument is not a clean result."""
+    """Real firings from the append-only ledger, plus what was excluded.
+
+    Returns `(rows, excluded)` or `(None, 0)`. An absent ledger is reported as
+    such, never as zero — a missing instrument is not a clean result."""
     if not os.path.exists(LEDGER):
-        return None
-    rows = []
+        return None, 0
+    rows, excluded = [], 0
     for line in open(LEDGER, encoding="utf-8", errors="replace"):
         try:
-            rows.append(json.loads(line))
+            row = json.loads(line)
         except Exception:
             continue
-    return rows
+        if is_synthetic(row.get("target", "")):
+            excluded += 1
+            continue
+        rows.append(row)
+    return rows, excluded
 
 
 def read_models(project_globs):
@@ -149,7 +210,7 @@ def main() -> int:
     off_register = {k: v for k, v in depths.items()
                     if v not in CANONICAL and v not in TOLERATED}
     tolerated = {k: v for k, v in depths.items() if v in TOLERATED}
-    firings = read_gate_firings()
+    firings, synthetic = read_gate_firings()
     models = read_models(a.project_glob or ["*"])
 
     report = {
@@ -164,6 +225,7 @@ def main() -> int:
         "gates": {
             "ledger_present": firings is not None,
             "firings": len(firings) if firings is not None else None,
+            "excluded_synthetic": synthetic,
             "by_gate": dict(collections.Counter(r.get("gate", "?") for r in firings).most_common())
                        if firings else {},
         },
@@ -197,6 +259,9 @@ def main() -> int:
         print(f"\nGate firings    {len(firings)} recorded")
         for g, n in collections.Counter(r.get('gate', '?') for r in firings).most_common():
             print(f"                  {n:4d}  {g}")
+        if synthetic:
+            print(f"                  ({synthetic} test/canary firings excluded — "
+                  f"targets in a temp directory)")
     print(f"\nModels          {len(models)} distinct, from session transcripts")
     for mid, n in models.most_common(8):
         print(f"                  {mid}  ({n:,} records)")

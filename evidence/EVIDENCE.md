@@ -1,49 +1,50 @@
 # Gate firings — recovered from Claude Code transcripts
 
-Scanned **169 transcripts** (155,658 records) across
+Scanned **371 transcripts** (243,407 records) across
 the scanned projects.
 
-**127 unique denials.** Every count below is deduplicated; the raw
-text-match count is 2.9x higher and is not usable.
+**97 unique denials** — a hook `tool_result` carrying an error whose
+text begins with the denial marker. Nothing else counts. A `grep BLOCKED` over
+the same transcripts returns 6.4x more, and none of the excess is a firing.
 
 ## What was excluded, and why
 
 | rejected | reason |
 |---:|---|
-| 164 | replayed duplicate |
-| 30 | unrecognised BLOCKED prose |
-| 24 | template in hook source |
-| 23 | hook source read |
-| 4 | deliberate hooktest |
+| 388 | gate text quoted in other tool output |
+| 66 | an uninstantiated {PLACEHOLDER} in gate source |
+| 43 | a gate's own test harness, run deliberately |
+| 22 | a gate's own source being written |
+| 2 | a gate's source quoted as an editor attachment |
 
-Each of those 5 is a way a naive `grep BLOCKED` overcounts. The hook
-source files contain the denial strings verbatim, so any session that read a
-hook inflates the count; templates carry an uninstantiated `{name}`;
-transcripts replay on resume and compaction.
+Almost all of it is this project's own text. A session that edits a gate fills
+its transcript with that gate's denial strings — in the diff, in the file being
+written, in the test harness printing its positive controls — and a text search
+cannot tell that from the gate refusing someone's claim. Earlier releases of
+this table could not either, which is why the published figure has come down.
 
 ## By gate
 
 | n | gate |
 |---:|---|
-| 59 | `vocab-gate` |
-| 35 | `research-depth-gate` |
-| 12 | `prereg-commitment-gate` |
-| 7 | `citation-attribution-gate` |
-| 6 | `marginal-gate` |
-| 6 | `ownership-gate` |
-| 2 | `research-depth-gate/maths` |
+| 57 | `vocab-gate` |
+| 19 | `research-depth-gate` |
+| 14 | `prereg-commitment-gate` |
+| 5 | `marginal-gate` |
+| 2 | `citation-attribution-gate` |
 
 ## By day
 
 | day | firings |
 |---|---:|
-| 2026-07-27 | 4 |
-| 2026-07-28 | 8 |
-| 2026-07-29 | 22 |
-| 2026-07-30 | 36 |
-| 2026-07-31 | 9 |
-| 2026-08-01 | 32 |
-| 2026-08-02 | 16 |
+| 2026-07-27 | 2 |
+| 2026-07-28 | 5 |
+| 2026-07-29 | 16 |
+| 2026-07-30 | 34 |
+| 2026-07-31 | 5 |
+| 2026-08-01 | 27 |
+| 2026-08-02 | 5 |
+| 2026-08-03 | 3 |
 
 *Timestamps are UTC; the final day's rows are the prior evening local time.*
 
@@ -55,14 +56,9 @@ violation types are verbatim.*
 
 | when (UTC) | gate | target | violation |
 |---|---|---|---|
-| 2026-07-27 19:37:47 | `research-depth-gate` | `?` | a `depth: full` claim with no artifact behind it. |
-| 2026-07-27 19:43:15 | `research-depth-gate` | `?` | a `depth: full` claim with no artifact behind it. |
 | 2026-07-27 23:05:11 | `research-depth-gate` | `«58b5».md` | a `depth: full` claim with no artifact behind it. |
 | 2026-07-27 23:55:30 | `research-depth-gate` | `«2b78».md` | a `depth: full` claim with no artifact behind it. |
 | 2026-07-28 00:30:40 | `research-depth-gate` | `«ecec».md` | a `depth: full` claim with no artifact behind it. |
-| 2026-07-28 16:43:46 | `research-depth-gate` | `?` | a `depth: full` claim with no artifact behind it. |
-| 2026-07-28 16:44:42 | `prereg-commitment-gate` | `?` | T-01.md reports a RESULT with 1/1 §3 commitments undischarged. |
-| 2026-07-28 16:44:51 | `prereg-commitment-gate` | `?` | T-02.md reports a RESULT but has no ```commitments block. |
 | 2026-07-28 20:14:37 | `research-depth-gate` | `«0440».md` | a `depth: full` claim with no artifact behind it. |
 | 2026-07-28 21:36:02 | `research-depth-gate` | `«07a0».md` | a `depth: full` claim with no artifact behind it. |
 | 2026-07-28 23:45:35 | `prereg-commitment-gate` | `«6a50».md` | TF-style9.md reports a RESULT but has no ```commitments block. |
@@ -70,15 +66,11 @@ violation types are verbatim.*
 | 2026-07-29 04:47:19 | `research-depth-gate` | `«fa3d».md` | a `depth: full` claim with no artifact behind it. |
 | 2026-07-29 05:17:00 | `prereg-commitment-gate` | `«53c6».md` | MR-06.md reports a RESULT but has no ```commitments block. |
 | 2026-07-29 05:17:41 | `prereg-commitment-gate` | `«53c6».md` | MR-06.md reports a RESULT with 3/3 §3 commitments undischarged. |
-| 2026-07-29 14:27:27 | `prereg-commitment-gate` | `?` | SA-03.md reports a RESULT with 7/7 §3 commitments undischarged. |
 | 2026-07-29 15:38:06 | `research-depth-gate` | `«d27e».md` | a `depth: full` claim with no artifact behind it. |
 | 2026-07-29 16:08:38 | `research-depth-gate` | `«446c».md` | a `depth: full` claim with no artifact behind it. |
 | 2026-07-29 16:09:38 | `prereg-commitment-gate` | `«9c0c».md` | TF-style11.md reports a RESULT with 3/3 §3 commitments undischarged. |
-| 2026-07-29 16:18:47 | `research-depth-gate` | `?` | a `depth: full` claim with no artifact behind it. |
-| 2026-07-29 16:26:54 | `vocab-gate` | `?` | an identifier with no entry in VOCAB.md. |
 | 2026-07-29 18:45:39 | `vocab-gate` | `«3d5f».py` | an identifier with no entry in VOCAB.md. |
 | 2026-07-29 19:26:01 | `research-depth-gate` | `«0440».md` | a `depth: full` claim with no artifact behind it. |
-| 2026-07-29 19:46:47 | `research-depth-gate` | `?` | a `depth: full` claim with no artifact behind it. |
 | 2026-07-29 21:06:49 | `prereg-commitment-gate` | `«53c6».md` | MR-06.md reports a RESULT with 3/3 §3 commitments undischarged. |
 | 2026-07-29 21:08:49 | `vocab-gate` | `«268f».md` | an identifier with no entry in VOCAB.md. |
 | 2026-07-29 22:12:45 | `vocab-gate` | `«d27e».md` | an identifier with no entry in VOCAB.md. |
@@ -86,8 +78,6 @@ violation types are verbatim.*
 | 2026-07-29 22:44:02 | `vocab-gate` | `«3dd3».md` | an identifier with no entry in VOCAB.md. |
 | 2026-07-29 22:47:29 | `vocab-gate` | `«ecec».md` | an identifier with no entry in VOCAB.md. |
 | 2026-07-29 22:50:01 | `vocab-gate` | `«d27e».md` | an identifier with no entry in VOCAB.md. |
-| 2026-07-29 23:01:10 | `citation-attribution-gate` | `?` | a bibliography entry contradicts the paper on disk. |
-| 2026-07-29 23:02:18 | `citation-attribution-gate` | `?` | a bibliography entry contradicts the paper on disk. |
 | 2026-07-29 23:04:44 | `vocab-gate` | `«048b».md` | an identifier with no entry in VOCAB.md. |
 | 2026-07-30 00:20:45 | `vocab-gate` | `«4aa7».md` | an identifier with no entry in VOCAB.md. |
 | 2026-07-30 00:20:53 | `vocab-gate` | `«c21b».md` | an identifier with no entry in VOCAB.md. |
@@ -114,8 +104,6 @@ violation types are verbatim.*
 | 2026-07-30 14:53:16 | `research-depth-gate` | `«d27e».md` | a `depth: full` claim with no artifact behind it. |
 | 2026-07-30 15:00:59 | `vocab-gate` | `«d27e».md` | an identifier with no entry in VOCAB.md. |
 | 2026-07-30 15:10:14 | `citation-attribution-gate` | `«07a0».md` | a bibliography entry contradicts the paper on disk. |
-| 2026-07-30 15:18:59 | `marginal-gate` | `?` | an effective-sample-size claim with no marginal named. |
-| 2026-07-30 15:19:57 | `marginal-gate` | `?` | an effective-sample-size claim with no marginal named. |
 | 2026-07-30 15:26:41 | `vocab-gate` | `«172b».md` | an identifier with no entry in VOCAB.md. |
 | 2026-07-30 15:36:41 | `vocab-gate` | `«b6c3».md` | an identifier with no entry in VOCAB.md. |
 | 2026-07-30 15:38:26 | `vocab-gate` | `«1436».md` | an identifier with no entry in VOCAB.md. |
@@ -128,10 +116,6 @@ violation types are verbatim.*
 | 2026-07-31 01:34:53 | `marginal-gate` | `«56cd».md` | an effective-sample-size claim with no marginal named. |
 | 2026-07-31 01:48:07 | `vocab-gate` | `«cf99».txt` | an identifier with no entry in VOCAB.md. |
 | 2026-07-31 02:55:47 | `vocab-gate` | `«9fb5».md` | an identifier with no entry in VOCAB.md. |
-| 2026-07-31 03:28:23 | `research-depth-gate` | `?` | a `depth: full` claim with no artifact behind it. |
-| 2026-07-31 03:28:27 | `research-depth-gate` | `?` | a `depth: full` claim with no artifact behind it. |
-| 2026-07-31 03:28:31 | `vocab-gate` | `?` | an identifier with no entry in VOCAB.md. |
-| 2026-07-31 03:33:12 | `research-depth-gate` | `?` | a `depth: full` claim with no artifact behind it. |
 | 2026-07-31 17:02:48 | `research-depth-gate` | `«ec1f».md` | a `depth: full` claim with no artifact behind it. |
 | 2026-07-31 22:18:55 | `vocab-gate` | `«9d98».py` | an identifier with no entry in VOCAB.md. |
 | 2026-08-01 02:32:18 | `prereg-commitment-gate` | `«602a».md` | SA-07.md reports a RESULT with 5/5 §3 commitments undischarged. |
@@ -159,26 +143,13 @@ violation types are verbatim.*
 | 2026-08-01 19:38:15 | `vocab-gate` | `«8af1».md` | an identifier with no entry in VOCAB.md. |
 | 2026-08-01 19:43:34 | `vocab-gate` | `«8af1».md` | an identifier with no entry in VOCAB.md. |
 | 2026-08-01 19:49:20 | `vocab-gate` | `«4aa7».md` | an identifier with no entry in VOCAB.md. |
-| 2026-08-01 19:56:43 | `research-depth-gate` | `?` | a `depth: full` claim with no artifact behind it. |
-| 2026-08-01 19:57:56 | `research-depth-gate` | `?` | a `depth: full` claim with no artifact behind it. |
 | 2026-08-01 19:58:13 | `vocab-gate` | `«35bf».md` | an identifier with no entry in VOCAB.md. |
 | 2026-08-01 19:59:44 | `vocab-gate` | `«2b78».md` | an identifier with no entry in VOCAB.md. |
-| 2026-08-01 20:20:42 | `research-depth-gate` | `?` | a `depth: full` claim with no artifact behind it. |
-| 2026-08-01 20:24:48 | `citation-attribution-gate` | `?` | a bibliography entry contradicts the paper on disk. |
-| 2026-08-01 20:26:49 | `ownership-gate` | `?` | an ownership concession contradicts OWNERSHIP.md. |
-| 2026-08-02 02:46:42 | `ownership-gate` | `?` | an ownership concession contradicts OWNERSHIP.md. |
 | 2026-08-02 14:29:35 | `vocab-gate` | `«1c5e».py` | an identifier with no entry in VOCAB.md. |
 | 2026-08-02 16:42:51 | `vocab-gate` | `«4b91».md` | an identifier with no entry in VOCAB.md. |
-| 2026-08-02 18:07:46 | `research-depth-gate` | `?` | a `depth: full` claim resting on an artifact whose text layer |
-| 2026-08-02 18:08:03 | `ownership-gate` | `?` | an ownership concession contradicts OWNERSHIP.md. |
-| 2026-08-02 18:09:29 | `research-depth-gate` | `«3253».py` | a `depth: full` claim with no artifact behind it. |
-| 2026-08-02 18:11:26 | `research-depth-gate` | `?` | a `depth: full` claim resting on an artifact whose text layer |
-| 2026-08-02 18:11:26 | `research-depth-gate` | `«3253».py` | a `depth: full` claim resting on an artifact whose text layer |
-| 2026-08-02 18:11:36 | `research-depth-gate` | `?` | a `depth: full` claim with no artifact behind it. |
-| 2026-08-02 18:11:48 | `research-depth-gate/maths` | `?` | a `depth: full` claim resting on an artifact whose text layer is known to lose mathematics. |
-| 2026-08-02 18:12:26 | `citation-attribution-gate` | `«537e».py` | a bibliography entry contradicts the paper on disk. |
-| 2026-08-02 18:12:31 | `citation-attribution-gate` | `«537e».py` | a bibliography entry contradicts the paper on disk. |
-| 2026-08-02 18:13:16 | `ownership-gate` | `?` | an ownership concession contradicts {REGISTER_NAME}. |
-| 2026-08-02 18:13:16 | `ownership-gate` | `«f73c».py` | an ownership concession contradicts {REGISTER_NAME}. |
-| 2026-08-02 18:13:26 | `ownership-gate` | `?` | an ownership concession contradicts OWNERSHIP.md. |
-| 2026-08-02 18:15:13 | `research-depth-gate/maths` | `?` | a `depth: full` claim resting on an artifact whose text layer is known to lose mathematics. |
+| 2026-08-02 20:08:41 | `prereg-commitment-gate` | `«e49b».md` | TF-style12.md reports a RESULT but has no ```commitments block. |
+| 2026-08-02 20:11:43 | `prereg-commitment-gate` | `«5659».md` | TF-style4.md reports a RESULT but has no ```commitments block. |
+| 2026-08-02 20:12:16 | `prereg-commitment-gate` | `«5659».md` | TF-style4.md reports a RESULT with 1/1 §3 commitments undischarged. |
+| 2026-08-03 06:12:33 | `prereg-commitment-gate` | `«b21b».md` | MA-01.md reports a RESULT with 2/5 §3 commitments undischarged. |
+| 2026-08-03 17:02:06 | `marginal-gate` | `«7858».md` | an effective-sample-size claim with no marginal named. |
+| 2026-08-03 22:54:24 | `prereg-commitment-gate` | `«a6fa».md` | MA-02.md reports a RESULT with 5/5 §3 commitments undischarged. |

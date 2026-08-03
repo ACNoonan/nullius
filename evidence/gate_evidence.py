@@ -1,10 +1,28 @@
 #!/usr/bin/env python3
 """Recover every real PreToolUse gate denial from Claude Code transcripts.
 
-Three contamination sources this handles explicitly:
-  1. hook SOURCE files read into context contain the literal BLOCKED strings
-  2. deliberate .hooktest runs are not research denials
-  3. transcripts REPLAY on resume/compaction, so one firing appears N times
+The hard part is not finding the denials. It is that a transcript from a session
+that WORKED ON these gates is saturated with their denial strings — source being
+written, a diff of two versions, the gate's own test harness printing its
+positive controls — and every one of those reads like a firing to a text search.
+
+Until 2026-08-03 that was handled with blocklists — a path prefix, a literal
+placeholder, a filename — and blocklists were the wrong instrument. Each was
+keyed to the single example in front of whoever wrote it, so each passed every
+test anyone thought to write and failed silently on the second instance. The
+source-read filter matched `/.claude/hooks/` and missed `nullius/gates/`; the
+template filter matched `{name}` and missed `{REGISTER_NAME}`.
+
+It now reads the RECORD SHAPE instead: a denial is a `tool_result` with
+`is_error` true whose text begins with the marker. See DENIAL_RE below. Rebuilt
+across the full transcript history, that removes 31 rows the blocklists had
+passed — gate source being written, a `diff` of two gate versions, the stdout of
+a gate's own test harness, an editor attachment. Every category it drops was
+checked by hand and none was a firing.
+
+On one identical scan the figure went 127 -> 96. Nothing changed about the
+gates; the instrument that counted them was wrong, and had been since the first
+release.
 """
 import json, glob, os, re, sys, collections, hashlib
 
@@ -26,7 +44,88 @@ GATE_BY_SIG = [
     ("no marginal named",              "marginal-gate"),
     ("effective-sample-size",          "marginal-gate"),
 ]
-BLOCK_RE = re.compile(r"BLOCKED\s+—\s+([^\\\"\n]{10,200})")
+# An uninstantiated placeholder of ANY name, not just `{name}`. `ownership_gate`
+# uses `{REGISTER_NAME}` and shipped two rows past the old literal test.
+TEMPLATE_RE = re.compile(r"\{[A-Za-z_][A-Za-z_0-9]*\}")
+
+# A gate reading its own source is not a gate catching a claim. Match on what
+# the file IS — a gate module, wherever it is checked out — rather than on the
+# one directory the author happened to have installed at the time.
+def is_gate_source(target):
+    if not target:
+        return False
+    base = os.path.basename(target)
+    parent = os.path.basename(os.path.dirname(target))
+    return (
+        "/.claude/hooks/" in target
+        or parent in ("gates", "hooks")
+        or bool(re.match(r"^(test[-_])?[a-z_-]+[-_]gate\.py$", base))
+        or base in ("provenance.py", "proseleak.py", "_gatelog.py",
+                    "gate_evidence.py", "extraction_integrity.py")
+    )
+
+# A hook denial has a SHAPE, and reading for it beats every path blocklist here.
+#
+# The generator used to regex the whole serialised record, so any record that
+# merely CONTAINED the string counted: a `diff` of two gate files, the stdout of
+# a gate's own test harness, a Write whose content was a gate, an attachment
+# snippet of one. All of it read as a firing. That is how five contaminated rows
+# reached the published table, and widening the path filters only caught three
+# of them — the rest had no resolvable target to filter on.
+#
+# What a real denial is, structurally: a `tool_result` block, `is_error` true,
+# whose text BEGINS with the marker. Nothing else in a transcript has that shape,
+# and a gate quoting itself never does — its BLOCKED text sits mid-content, in a
+# result that succeeded.
+DENIAL_RE = re.compile(r"^BLOCKED\s+—\s+(.{10,200}?)(?:\n|$)")
+
+
+def _blocks(rec):
+    c = (rec.get("message") or {}).get("content")
+    return c if isinstance(c, list) else []
+
+
+def _result_text(blk):
+    txt = blk.get("content")
+    if isinstance(txt, list):
+        txt = "\n".join(p.get("text", "") for p in txt if isinstance(p, dict))
+    return txt if isinstance(txt, str) else ""
+
+
+def denials(rec):
+    """Every genuine hook denial in one transcript record."""
+    for blk in _blocks(rec):
+        if not isinstance(blk, dict) or blk.get("type") != "tool_result":
+            continue
+        if not blk.get("is_error"):
+            continue
+        m = DENIAL_RE.match(_result_text(blk).strip())
+        if m:
+            yield m.group(1).strip()
+
+
+# Why a record mentions BLOCKED without being a firing. Reported rather than
+# lumped into one number, because the breakdown is the argument: it shows what a
+# naive `grep BLOCKED` would have counted, and every category here is one this
+# generator counted at some point.
+def why_not_denial(rec):
+    if any(denials(rec)):
+        return None
+    blob = json.dumps(rec, ensure_ascii=False)
+    for blk in _blocks(rec):
+        if isinstance(blk, dict) and blk.get("type") == "tool_use":
+            fp = (blk.get("input") or {}).get("file_path") or ""
+            if is_gate_source(fp):
+                return "a gate's own source being written"
+    if any(s in blob for s in ("POSITIVE CONTROL", "POS CONTROL", "NEG CONTROL",
+                               "must BLOCK", "Must BLOCK", "hooktest", "_gatetest")):
+        return "a gate's own test harness, run deliberately"
+    if is_gate_source((rec.get("attachment") or {}).get("filename", "")):
+        return "a gate's source quoted as an editor attachment"
+    if TEMPLATE_RE.search(blob) and "permissionDecisionReason" not in blob:
+        return "an uninstantiated {PLACEHOLDER} in gate source"
+    return "gate text quoted in other tool output"
+
 
 def classify(reason):
     for sig, gate in GATE_BY_SIG:
@@ -56,18 +155,17 @@ for root in ROOTS:
             try: rec = json.loads(line)
             except Exception: continue
             blob = json.dumps(rec, ensure_ascii=False)
-            for m in BLOCK_RE.finditer(blob):
-                reason = m.group(1).strip()
-                if "{name}" in reason:                      # uninstantiated template
-                    rejected["template in hook source"] += 1; continue
+            for reason in denials(rec):
+                if TEMPLATE_RE.search(reason):              # uninstantiated template
+                    rejected["template in gate source"] += 1; continue
                 gate = classify(reason)
                 if not gate:
                     rejected["unrecognised BLOCKED prose"] += 1; continue
                 tuid = rec.get("message", {}).get("content", [{}])
                 tuid = tuid[0].get("tool_use_id") if isinstance(tuid, list) and tuid else None
                 target = tool_targets.get(tuid, "")
-                if "/.claude/hooks/" in target:
-                    rejected["hook source read"] += 1; continue
+                if is_gate_source(target):
+                    rejected["gate source read"] += 1; continue
                 if ".hooktest" in blob:
                     rejected["deliberate hooktest"] += 1; continue
                 key = rec.get("uuid") or f"{reason}|{target}"
@@ -79,6 +177,9 @@ for root in ROOTS:
                     "target": os.path.basename(target) if target else "?",
                     "session": os.path.basename(path)[:8],
                 }
+            why = why_not_denial(rec)
+            if why:
+                rejected[why] += 1
 
 def redact(name):
     """Target filenames name unpublished work and must not ship.
@@ -120,9 +221,10 @@ out = [
     f"Scanned **{files_scanned} transcripts** ({lines_scanned:,} records) across",
     "the scanned projects.",
     "",
-    f"**{len(ev)} unique denials.** Every count below is deduplicated; the raw",
-    f"text-match count is {(len(ev) + sum(rejected.values())) / max(len(ev), 1):.1f}x "
-    "higher and is not usable.",
+    f"**{len(ev)} unique denials** — a hook `tool_result` carrying an error whose",
+    "text begins with the denial marker. Nothing else counts. A `grep BLOCKED` over",
+    f"the same transcripts returns {(len(ev) + sum(rejected.values())) / max(len(ev), 1):.1f}x "
+    "more, and none of the excess is a firing.",
     "",
     "## What was excluded, and why",
     "",
@@ -132,10 +234,11 @@ out = [
 for k, n in rejected.most_common():
     out.append(f"| {n} | {k} |")
 out += ["",
-    f"Each of those {len(rejected)} is a way a naive `grep BLOCKED` overcounts. The hook",
-    "source files contain the denial strings verbatim, so any session that read a",
-    "hook inflates the count; templates carry an uninstantiated `{name}`;",
-    "transcripts replay on resume and compaction.",
+    "Almost all of it is this project's own text. A session that edits a gate fills",
+    "its transcript with that gate's denial strings — in the diff, in the file being",
+    "written, in the test harness printing its positive controls — and a text search",
+    "cannot tell that from the gate refusing someone's claim. Earlier releases of",
+    "this table could not either, which is why the published figure has come down.",
     "",
     "## By gate", "", "| n | gate |", "|---:|---|"]
 for g, n in _c.Counter(e["gate"] for e in ev).most_common():

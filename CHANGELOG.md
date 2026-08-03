@@ -2,6 +2,52 @@
 
 ## [Unreleased]
 
+### Fixed — third sync: the instruments that count the gates were not gated
+
+Nothing below changes what a gate blocks. It changes what this project was
+entitled to say about how often they had, which had drifted in the direction
+that flatters the tool — the one direction nothing here was checking.
+
+- **The test suite wrote its firings into the user's real evidence ledger.**
+  `_gatelog.LEDGER` was a constant, so nothing could redirect it, and 177 of the
+  220 rows in the author's ledger were rows `tests/test_gates.py` had written.
+  The path now resolves per call — `$NULLIUS_LEDGER`, else the legacy location
+  if it exists, else `$XDG_STATE_HOME/nullius/` — and the suite points itself at
+  a temp file before the first gate runs. The legacy path is kept when present
+  so an existing ledger is not orphaned.
+- **`provenance.py` would have stamped those rows into a paper.** It read the
+  ledger raw, so the derived provenance block — the one part of a paper whose
+  whole warrant is that no number in it was typed — would have disclosed 220
+  firings where 39 had happened. Synthetic rows are now excluded by target
+  location and reported as an exclusion, never dropped silently. The one case
+  it cannot see, a positive control replaying real text through a gate, is
+  documented rather than filtered.
+- **The evidence generator counted this project quoting itself.** It searched
+  transcripts for the denial text, so a session that *edited* a gate — writing
+  it, diffing two versions, running its test harness — read as a firing. Two
+  filters were also keyed to single spellings (`/.claude/hooks/` only;
+  `{name}` while `ownership_gate` templates `{REGISTER_NAME}`). Replaced with a
+  structural test: a firing is an errored hook result whose text begins with the
+  marker. Every category the new test drops was checked by hand; none was a
+  firing.
+
+### Changed — the published evidence figure comes down
+
+- **127 unique denials → 96** on one identical scan of 371 transcripts: 31 rows
+  were the gates quoting themselves. `grep BLOCKED` still returns 6.4x the real
+  number. The committed table tracks a live corpus, so its total moves as
+  sessions accrue; 127→96 is the paired comparison this entry is about.
+- **`ownership_gate` has never fired on live work.** The README claimed six
+  firings within a day of install; those were positive controls replaying the
+  section the gate was built from. It catches that case on demand and has not
+  yet caught a new one.
+- **The depth gate's maths-fidelity half likewise has no live firing** — its two
+  recorded hits were writes to a deliberate probe file.
+- Tests: 48 checks → 59, covering the ledger's write path, the redirect, and the
+  synthetic-firing classifier in both directions. The check that would have
+  caught the original bug — *the real ledger is untouched* — was verified to go
+  red when pointed at the real ledger.
+
 ### Added — second sync from the private harness
 
 - `ownership_gate`: refuses an ownership CONCESSION over a source the register
