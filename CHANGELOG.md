@@ -2,6 +2,41 @@
 
 ## [Unreleased]
 
+### Added — a positive control can now say that it is one
+
+The case location filtering cannot reach: a control replays real text through a
+real gate at a real path, so its ledger row is identical to a genuine catch.
+Everything about it is true except the intent, and intent is not in the file.
+
+- `NULLIUS_CONTROL` marks every firing beneath it `control: true`. The gate still
+  blocks — refusing is the point of a control — and only the row's status changes.
+- `tools/selftest.py <gate> <path> [--expect deny|allow]` runs a gate against text
+  on stdin and **sets the variable itself**, so a control cannot be run without
+  being labelled. That is the whole design: a flag you must remember is a flag you
+  forget, and forgetting counts a control as a real catch. Because the tool cannot
+  omit the label, an unlabelled row stays trustworthy. Exits non-zero when the gate
+  disagrees with the prediction, so a gate that stopped firing fails CI.
+- `provenance.counts_as_evidence(row)` is now the single named decision, honouring
+  the declaration first and falling back to location for rows written before the
+  declaration existed.
+- Tests 59 → 73, including the check that would have caught the original problem:
+  the same firing, on the same real path, counted with the flag and without.
+
+### Fixed — `extraction_integrity.py` had forked, and it is a gate's own instrument
+
+Two research repos ran a 328-line copy; the canonical one here is 378. Reconciled
+after measuring rather than reasoning: the canonical copy was swept against a real
+341-PDF shelf and its classification compared to the committed index — **321 shared
+papers, zero class changes, nothing dropped from `maths_unsafe`.** The fork was a
+refactor. Its one behavioural difference was where the index is written
+(`<root>/.nullius/` rather than `papers/`), and that is the hazard: a reader that
+knows only the old path stops finding the index the moment the tool is upgraded,
+silently, because an absent index is how the maths half is designed to go inert.
+
+- The tool resolved `_config` through `abspath(__file__)`, which does not follow a
+  symlink — so the supported install (link, never copy) would have silently
+  degraded the governed-root default to the shelf directory. Uses `realpath` now.
+
 ### Fixed — third sync: the instruments that count the gates were not gated
 
 Nothing below changes what a gate blocks. It changes what this project was

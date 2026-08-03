@@ -156,6 +156,26 @@ def is_synthetic(target: str) -> bool:
     return any(real.startswith(r + os.sep) for r in TEMP_ROOTS)
 
 
+def counts_as_evidence(row) -> bool:
+    """Does this ledger row support a claim that a gate caught something?
+
+    Two ways it does not, and they are not the same kind of test.
+
+    `control` is the row saying so itself, set by `NULLIUS_CONTROL` and written
+    by `tools/selftest.py`. It is the stronger signal and the ONLY one that
+    reaches a positive control — real gate, real path, real text, replayed on
+    purpose. No amount of looking at the path finds that.
+
+    `is_synthetic` is us inferring it from where the write went. It catches the
+    fixtures a test suite leaves behind, including every row written before the
+    declaration existed, which is why both are kept rather than one replacing
+    the other.
+    """
+    if not isinstance(row, dict):
+        return False
+    return not (row.get("control") or is_synthetic(row.get("target", "")))
+
+
 def read_gate_firings():
     """Real firings from the append-only ledger, plus what was excluded.
 
@@ -169,7 +189,7 @@ def read_gate_firings():
             row = json.loads(line)
         except Exception:
             continue
-        if is_synthetic(row.get("target", "")):
+        if not counts_as_evidence(row):
             excluded += 1
             continue
         rows.append(row)

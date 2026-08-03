@@ -67,18 +67,57 @@ def ledger_path():
         return LEGACY
 
 
+def is_control():
+    """True when this firing was provoked on purpose, to prove a gate works.
+
+    THE CASE THIS EXISTS FOR
+        A positive control replays text a gate is supposed to refuse — usually
+        the very passage the gate was built from — and checks that it refuses.
+        The write is real and the path is real, so the row it produces is
+        byte-for-byte what a genuine catch produces. Nothing downstream could
+        tell them apart, and one row in the author's own ledger is exactly this:
+        the §8 over-concession that `ownership_gate` was written for, replayed
+        after the fact. Counted raw, it made the gate look like it had caught
+        something in the wild. It never has.
+
+        Location filtering does not reach this. A temp path or a `_gatetest.md`
+        is detectable precisely because it is fake; a positive control is
+        undetectable precisely because everything about it is real except the
+        intent, and intent is not in the file.
+
+    SO THE CONTROL DECLARES ITSELF
+        `NULLIUS_CONTROL=1` in the environment marks every firing underneath it.
+        The gate still blocks — refusing is the whole point of the control — and
+        the row is still written. Only its status changes.
+
+        Prefer `tools/selftest.py` over setting this by hand. It sets the
+        variable itself, so a control cannot be run without being labelled, and
+        an unlabelled row therefore stays trustworthy. Remembering a flag is a
+        discipline; not being able to forget it is a design.
+
+    THE DIRECTION IT FAILS IN, STATED
+        Forget the flag and a control is counted as a real catch, which inflates
+        — the same direction every other error here ran. That is why the label
+        belongs on a tool rather than on a habit.
+    """
+    try:
+        return os.environ.get("NULLIUS_CONTROL", "").strip().lower() not in ("", "0", "false", "no")
+    except Exception:
+        return False
+
+
 def record(gate, reason="", target=""):
     """Append one firing row. Silent on every failure, by design."""
     try:
-        row = json.dumps(
-            {
-                "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-                "gate": str(gate)[:64],
-                "target": str(target or "")[:400],
-                "reason": str(reason or "").strip().split("\n")[0][:300],
-            },
-            ensure_ascii=False,
-        )
+        entry = {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "gate": str(gate)[:64],
+            "target": str(target or "")[:400],
+            "reason": str(reason or "").strip().split("\n")[0][:300],
+        }
+        if is_control():
+            entry["control"] = True
+        row = json.dumps(entry, ensure_ascii=False)
         path = ledger_path()
         os.makedirs(os.path.dirname(path), exist_ok=True)
         # One write() on an O_APPEND fd is atomic for a line this size, which

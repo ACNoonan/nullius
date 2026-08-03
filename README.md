@@ -145,14 +145,33 @@ that.
 | variable | what it sets | default |
 |---|---|---|
 | `NULLIUS_LEDGER` | where firings are appended | `$XDG_STATE_HOME/nullius/gate-firings.jsonl`, or `~/.claude/hooks/gate-firings.jsonl` if that file already exists |
+| `NULLIUS_CONTROL` | marks every firing beneath it as a deliberate control | unset |
 | `NULLIUS_SHELF` | the PDF shelf `extraction_integrity.py` sweeps | `papers/` under the governed root |
 
-Point `NULLIUS_LEDGER` at a scratch file whenever you exercise the gates
-deliberately. The ledger is the artifact you will later cite, and a test run
-writes rows indistinguishable from real ones — which is exactly what happened
-here: 177 of 220 rows in the author's own ledger were this project's test suite,
-and `provenance.py` would have stamped all 220 into a paper. Both are fixed, the
-suite redirects itself, and the stamp now reports what it excluded.
+The ledger is the artifact you will later cite, and **a firing you provoked on
+purpose is written exactly like one a gate caught.** That is not hypothetical:
+177 of 220 rows in the author's own ledger were this project's test suite, and
+`provenance.py` would have stamped all 220 into a paper. The suite now redirects
+itself and the stamp reports what it excluded.
+
+Location filtering handles fixtures, but it cannot reach the case that matters
+most — a **positive control**, which replays real text through a real gate at a
+real path to prove the gate refuses it. Everything about that row is genuine
+except the intent, and intent is not in the file. So the control declares
+itself:
+
+```sh
+tools/selftest.py ownership_gate paper/sections/08.md < the-offending-text.md
+```
+
+That sets `NULLIUS_CONTROL` for you, so the row is labelled and the stamp skips
+it. **Use the tool rather than the variable.** A flag you have to remember is a
+flag you forget, and forgetting counts a control as a real catch — the same
+inflating direction as every other error this release fixed. Because the tool
+cannot be used without labelling, an *unlabelled* row stays worth trusting.
+`selftest.py` exits non-zero when a gate disagrees with what you predicted, so a
+gate that has quietly stopped firing fails CI instead of looking like a clean
+repo.
 
 ## Evidence
 

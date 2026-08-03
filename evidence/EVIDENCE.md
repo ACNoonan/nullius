@@ -1,19 +1,19 @@
 # Gate firings — recovered from Claude Code transcripts
 
-Scanned **371 transcripts** (243,407 records) across
+Scanned **372 transcripts** (245,268 records) across
 the scanned projects.
 
 **97 unique denials** — a hook `tool_result` carrying an error whose
 text begins with the denial marker. Nothing else counts. A `grep BLOCKED` over
-the same transcripts returns 6.4x more, and none of the excess is a firing.
+the same transcripts returns 6.5x more, and none of the excess is a firing.
 
 ## What was excluded, and why
 
 | rejected | reason |
 |---:|---|
-| 388 | gate text quoted in other tool output |
-| 66 | an uninstantiated {PLACEHOLDER} in gate source |
-| 43 | a gate's own test harness, run deliberately |
+| 397 | gate text quoted in other tool output |
+| 70 | an uninstantiated {PLACEHOLDER} in gate source |
+| 45 | a gate's own test harness, run deliberately |
 | 22 | a gate's own source being written |
 | 2 | a gate's source quoted as an editor attachment |
 

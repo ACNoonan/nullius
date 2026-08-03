@@ -258,6 +258,77 @@ def test_firing_ledger(tmp):
     check("an empty target is not synthetic", not provenance.is_synthetic(""))
 
 
+def test_declared_control(tmp):
+    """A positive control writes to a real path, so only self-declaration reaches it.
+
+    This is the one case location filtering cannot see: the gate, the path and
+    the text are all genuine, and only the intent is different. One row in the
+    author's ledger is this — `ownership_gate` replaying the section it was
+    built from — and counted raw it made the gate look like it had caught
+    something live. Both directions matter here: the flag must mark the row, and
+    an unflagged firing on the SAME path must stay unmarked, or the mechanism
+    would just be excluding everything.
+    """
+    print("\ndeclared control")
+    sys.path.insert(0, GATES)
+    try:
+        import _gatelog, provenance
+    finally:
+        sys.path.pop(0)
+
+    on = os.path.join(tmp, "control"); os.makedirs(on)
+    open(os.path.join(on, ".nullius.toml"), "w").close()
+    real = os.path.join(on, "sections", "08.md"); os.makedirs(os.path.dirname(real))
+    ledger = os.environ["NULLIUS_LEDGER"]
+
+    def rows_after(fn):
+        before = sum(1 for _ in open(ledger, encoding="utf-8")) if os.path.exists(ledger) else 0
+        fn()
+        return [json.loads(l) for l in open(ledger, encoding="utf-8")][before:]
+
+    os.environ["NULLIUS_CONTROL"] = "1"
+    marked = rows_after(lambda: run_gate("research_depth_gate", real, UNBACKED))
+    os.environ.pop("NULLIUS_CONTROL")
+    plain = rows_after(lambda: run_gate("research_depth_gate", real, UNBACKED))
+
+    check("the gate still blocks under a control", bool(marked))
+    check("a control run is marked", all(r.get("control") for r in marked), str(marked))
+    check("the same firing unflagged is not marked",
+          plain and not any(r.get("control") for r in plain), str(plain))
+    check("provenance excludes a declared control",
+          all(not provenance.counts_as_evidence(r) for r in marked))
+
+    # The fixtures above live in a temp dir, so location alone already excludes
+    # them — which is exactly the case `control` is NOT needed for. Re-run the
+    # decision on a REAL path, where the flag is the only thing that can differ,
+    # or this whole mechanism goes untested.
+    on_paper = "/home/r/paper/sections/08.md"
+    check("a real-path firing counts as evidence",
+          provenance.counts_as_evidence({"gate": "ownership-gate", "target": on_paper}))
+    check("the same firing declared as a control does not",
+          not provenance.counts_as_evidence(
+              {"gate": "ownership-gate", "target": on_paper, "control": True}))
+
+    # The flag must be a flag, not any value at all.
+    for val, want in (("0", False), ("false", False), ("", False), ("1", True), ("yes", True)):
+        os.environ["NULLIUS_CONTROL"] = val
+        check(f"NULLIUS_CONTROL={val!r} -> control={want}", _gatelog.is_control() is want)
+    os.environ.pop("NULLIUS_CONTROL", None)
+
+    # selftest.py must set the flag itself — that is the entire reason it exists.
+    out = subprocess.run([PY, os.path.join(ROOT, "tools", "selftest.py"),
+                          "research_depth_gate", real, "--expect", "deny"],
+                         input=UNBACKED, capture_output=True, text=True, timeout=30)
+    check("selftest.py reports the control passing", out.returncode == 0, out.stdout + out.stderr)
+    tail = [json.loads(l) for l in open(ledger, encoding="utf-8")][-1:]
+    check("selftest.py marked the row without being told",
+          bool(tail) and tail[0].get("control") is True, str(tail))
+    wrong = subprocess.run([PY, os.path.join(ROOT, "tools", "selftest.py"),
+                            "research_depth_gate", real, "--expect", "allow"],
+                           input=UNBACKED, capture_output=True, text=True, timeout=30)
+    check("selftest.py exits non-zero when the gate disagrees", wrong.returncode == 1)
+
+
 def test_citation_attribution(tmp):
     """The gate's whole point: the entry says one name, the artifact says another.
 
@@ -400,8 +471,8 @@ def main():
     try:
         for t in (test_opt_in, test_no_false_positive, test_depth_claim_shapes,
                   test_maths_fidelity, test_ownership, test_firing_ledger,
-                  test_citation_attribution, test_fail_open, test_proseleak,
-                  test_git_adapter):
+                  test_declared_control, test_citation_attribution,
+                  test_fail_open, test_proseleak, test_git_adapter):
             t(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
