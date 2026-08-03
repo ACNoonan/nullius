@@ -77,7 +77,12 @@ import subprocess
 import sys
 
 try:
-    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "gates"))
+    # realpath, not abspath: the supported way to install this in a research repo
+    # is a symlink to the one canonical copy — copying it is what forked it before.
+    # abspath leaves the symlink unresolved, so `../gates` would point beside the
+    # LINK rather than beside the tool, `_config` would not import, and the
+    # governed-root default would silently degrade to the shelf directory.
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "gates"))
     from _config import governing_root
 except Exception:                                # standalone use is fine
     def governing_root(_path):
@@ -92,6 +97,15 @@ GREEK = re.compile(r"[Ͱ-Ͽἀ-῿]")
 # is about NAME retrievability; a document can be perfect on one and hostile on the other.
 CAPSPLIT = re.compile(r"\b[A-Z] [A-Z]{3,}[A-Za-z]*")
 LIGATURE = re.compile(r"[ﬀ-ﬆ]")
+# SEARCHABILITY, which is a different axis from glyph fidelity and was missing entirely.
+# A NUL byte anywhere makes `file` report `data`, and every binary-skipping searcher -- ugrep,
+# ripgrep, git grep, and the `grep` wrapper Claude Code installs -- then skips the file SILENTLY
+# and exits 1. The read looks done and returns nothing. Found 2026-08-03 on 2604.14246, which
+# this tool had already passed as CLEAN with 192 NULs in it: `grep -c "the"` returned nothing on
+# a 60 KB paper. Five more on the calibrated-uncertainty shelf were in the same state.
+# Symbol fidelity and searchability are independent -- a file can be perfect on one and useless
+# on the other -- so this is reported as its own field rather than folded into `cls`.
+CTRL = re.compile(r"[\x00-\x08\x0e-\x1f]")
 RELATION = re.compile(r"[≤≥≠≈∼<>]")
 SCAN_MARK = (".tif", ".tiff", "pdfgenerator", "abbyy", "scansoft", "acrobat capture",
              "capture plug-in", "tesseract", "scanner", "kofax", "finereader",
@@ -211,6 +225,9 @@ def classify(pdf_path: str) -> dict:
     csplits = CAPSPLIT.findall(txt)
     cs_top = [w for w, _ in collections.Counter(csplits).most_common(6)]
 
+    nul = txt.count("\x00")
+    ctrl = len(CTRL.findall(txt))
+
     if cpp < 200:
         cls, note = "IMAGE-ONLY", "no usable text layer; every character must come from the image"
     elif any(k in blob for k in SCAN_MARK):
@@ -230,7 +247,7 @@ def classify(pdf_path: str) -> dict:
                 pages=pages, chars_per_page=round(cpp), greek=greek, ligatures=lig,
                 replacement=repl, type3=n_type3, math_fonts=n_math, eq_density=eqd,
                 caps_splits=len(csplits), caps_distinct=len(set(csplits)), caps_top=cs_top,
-                creator=creator[:44],
+                creator=creator[:44], nul=nul, ctrl=ctrl, searchable=(nul == 0),
                 text=os.path.basename(tpath) if tpath else None, note=note)
 
 
@@ -307,8 +324,14 @@ def sweep() -> list:
     print(f"index for the gate    ->  {STATE}")
     for k in ORDER:
         print(f"  {counts[k]:4d}  {k}")
+    # Searchability is reported at sweep level too, because it is shelf-wide by nature: the
+    # failure is invisible per-paper (a grep just returns nothing) and only a count makes it
+    # legible. 6 of 392 across three shelves on 2026-08-03, every one of them CLEAN.
+    unsearchable = [r for r in rows if not r.get("searchable", True)]
     print(f"\n  {len(unsafe)} maths-unsafe, {len(ligs)} ligature-bearing, "
-          f"{len(caps)} name-scan hazards")
+          f"{len(caps)} name-scan hazards, {len(unsearchable)} UNSEARCHABLE")
+    for r in sorted(unsearchable, key=lambda r: -r["nul"])[:10]:
+        print(f"    ⛔ {r['pdf']:44} {r['nul']:6d} NUL — grep returns a false zero here")
     return rows
 
 
@@ -322,7 +345,15 @@ def check(stem: str):
               f"{'   ** MATHS-UNSAFE **' if r['maths_unsafe'] else ''}\n  why     : {r['note']}")
         if r["cls"] != "NOT-A-PDF":
             print(f"  pages={r['pages']} chars/pg={r['chars_per_page']} greek={r['greek']} "
-                  f"ligatures={r['ligatures']} U+FFFD={r['replacement']} type3={r['type3']}")
+                  f"ligatures={r['ligatures']} U+FFFD={r['replacement']} type3={r['type3']} "
+                  f"nul={r['nul']} ctrl={r['ctrl']}")
+        # Printed BELOW the verdict on purpose: a CLEAN paper can be unsearchable, and a reader
+        # who stops at the verdict line is exactly who this failure caught out.
+        if not r["searchable"]:
+            print(f"  ⛔ UNSEARCHABLE : {r['nul']} NUL bytes — `file` calls this 'data', so ugrep, "
+                  f"ripgrep\n                    and git grep SKIP it silently and exit 1. A "
+                  f"full-text grep here\n                    returns a FALSE ZERO. Repair:\n"
+                  f"                    pdftotext {r['pdf']} - | tr -d '\\0' > text/<stem>.txt")
         if r["maths_unsafe"]:
             print("  action  : read equations off the image — "
                   f"tools/extraction_integrity.py page {stem} <page>")
